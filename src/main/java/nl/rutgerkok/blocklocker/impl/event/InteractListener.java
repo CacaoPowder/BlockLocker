@@ -7,6 +7,7 @@ import nl.rutgerkok.blocklocker.*;
 import nl.rutgerkok.blocklocker.Translator.Translation;
 import nl.rutgerkok.blocklocker.event.PlayerProtectionCreateEvent;
 import nl.rutgerkok.blocklocker.impl.BlockLockerPluginImpl;
+import nl.rutgerkok.blocklocker.impl.ProtectionLimitManager;
 import nl.rutgerkok.blocklocker.location.IllegalLocationException;
 import nl.rutgerkok.blocklocker.profile.PlayerProfile;
 import nl.rutgerkok.blocklocker.profile.Profile;
@@ -528,6 +529,37 @@ public final class InteractListener extends EventListener {
       }
       // So block is a water block - check its water level
       waterlogged = ((Levelled) signBlock.getBlockData()).getLevel() == 0;
+    }
+
+    // Check protection limits
+    ProtectionLimitManager limitManager = plugin.getProtectionLimitManager();
+    if (limitManager != null && !limitManager.canCreateProtection(player)) {
+      if (limitManager.isBlockedByTeamLimit(player)) {
+        int teamCount =
+            limitManager.getTeamProtectionCount(
+                org.bukkit.Bukkit.getScoreboardManager().getMainScoreboard().getPlayerTeam(player));
+        int teamLimit =
+            limitManager.getTeamLimit(
+                org.bukkit.Bukkit.getScoreboardManager().getMainScoreboard().getPlayerTeam(player));
+        plugin
+            .getTranslator()
+            .sendMessage(
+                player,
+                Translation.PROTECTION_LIMIT_TEAM_REACHED,
+                String.valueOf(teamCount),
+                String.valueOf(teamLimit));
+      } else {
+        int playerCount = limitManager.getPlayerProtectionCount(player);
+        int playerLimit = limitManager.getPlayerLimit(player);
+        plugin
+            .getTranslator()
+            .sendMessage(
+                player,
+                Translation.PROTECTION_LIMIT_REACHED,
+                String.valueOf(playerCount),
+                String.valueOf(playerLimit));
+      }
+      return false;
     }
 
     // Fire our PlayerProtectionCreateEvent

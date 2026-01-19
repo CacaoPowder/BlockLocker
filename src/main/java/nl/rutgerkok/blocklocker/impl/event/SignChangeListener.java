@@ -9,6 +9,7 @@ import nl.rutgerkok.blocklocker.SignType;
 import nl.rutgerkok.blocklocker.Translator.Translation;
 import nl.rutgerkok.blocklocker.event.PlayerProtectionCreateEvent;
 import nl.rutgerkok.blocklocker.impl.BlockLockerPluginImpl;
+import nl.rutgerkok.blocklocker.impl.ProtectionLimitManager;
 import nl.rutgerkok.blocklocker.location.IllegalLocationException;
 import nl.rutgerkok.blocklocker.profile.Profile;
 import nl.rutgerkok.blocklocker.protection.Protection;
@@ -137,6 +138,39 @@ public class SignChangeListener extends EventListener {
     // Sign must be attached to container
     if (!plugin.getProtectionFinder().isSignNearbyProtectable(block)) {
       plugin.getTranslator().sendMessage(player, Translation.PROTECTION_NOT_NEARBY);
+      block.breakNaturally();
+      event.setCancelled(true);
+      return;
+    }
+
+    // Check protection limits
+    ProtectionLimitManager limitManager = plugin.getProtectionLimitManager();
+    if (limitManager != null && !limitManager.canCreateProtection(player)) {
+      if (limitManager.isBlockedByTeamLimit(player)) {
+        int teamCount =
+            limitManager.getTeamProtectionCount(
+                org.bukkit.Bukkit.getScoreboardManager().getMainScoreboard().getPlayerTeam(player));
+        int teamLimit =
+            limitManager.getTeamLimit(
+                org.bukkit.Bukkit.getScoreboardManager().getMainScoreboard().getPlayerTeam(player));
+        plugin
+            .getTranslator()
+            .sendMessage(
+                player,
+                Translation.PROTECTION_LIMIT_TEAM_REACHED,
+                String.valueOf(teamCount),
+                String.valueOf(teamLimit));
+      } else {
+        int playerCount = limitManager.getPlayerProtectionCount(player);
+        int playerLimit = limitManager.getPlayerLimit(player);
+        plugin
+            .getTranslator()
+            .sendMessage(
+                player,
+                Translation.PROTECTION_LIMIT_REACHED,
+                String.valueOf(playerCount),
+                String.valueOf(playerLimit));
+      }
       block.breakNaturally();
       event.setCancelled(true);
       return;
