@@ -4,6 +4,7 @@ main: nl.rutgerkok.blocklocker.impl.BlockLockerPluginImpl
 author: Rutger Kok
 load: startup
 api-version: "1.20"
+depend: [Skript]
 softdepend: [Guilds, Factions, mcMMO, Towny]
 folia-supported: true
 permissions:

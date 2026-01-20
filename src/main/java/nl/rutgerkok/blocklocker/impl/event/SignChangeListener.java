@@ -1,6 +1,5 @@
 package nl.rutgerkok.blocklocker.impl.event;
 
-import java.awt.*;
 import java.util.Optional;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
@@ -13,6 +12,7 @@ import nl.rutgerkok.blocklocker.impl.ProtectionLimitManager;
 import nl.rutgerkok.blocklocker.location.IllegalLocationException;
 import nl.rutgerkok.blocklocker.profile.Profile;
 import nl.rutgerkok.blocklocker.protection.Protection;
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
@@ -21,6 +21,8 @@ import org.bukkit.block.sign.Side;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.block.SignChangeEvent;
+import org.bukkit.scoreboard.Scoreboard;
+import org.bukkit.scoreboard.Team;
 
 public class SignChangeListener extends EventListener {
 
@@ -146,31 +148,17 @@ public class SignChangeListener extends EventListener {
     // Check protection limits
     ProtectionLimitManager limitManager = plugin.getProtectionLimitManager();
     if (limitManager != null && !limitManager.canCreateProtection(player)) {
-      if (limitManager.isBlockedByTeamLimit(player)) {
-        int teamCount =
-            limitManager.getTeamProtectionCount(
-                org.bukkit.Bukkit.getScoreboardManager().getMainScoreboard().getPlayerTeam(player));
-        int teamLimit =
-            limitManager.getTeamLimit(
-                org.bukkit.Bukkit.getScoreboardManager().getMainScoreboard().getPlayerTeam(player));
-        plugin
-            .getTranslator()
-            .sendMessage(
-                player,
-                Translation.PROTECTION_LIMIT_TEAM_REACHED,
-                String.valueOf(teamCount),
-                String.valueOf(teamLimit));
-      } else {
-        int playerCount = limitManager.getPlayerProtectionCount(player);
-        int playerLimit = limitManager.getPlayerLimit(player);
-        plugin
-            .getTranslator()
-            .sendMessage(
-                player,
-                Translation.PROTECTION_LIMIT_REACHED,
-                String.valueOf(playerCount),
-                String.valueOf(playerLimit));
-      }
+      org.bukkit.scoreboard.Team team =
+          org.bukkit.Bukkit.getScoreboardManager().getMainScoreboard().getPlayerTeam(player);
+      int teamCount = limitManager.getTeamProtectionCount(team);
+      int teamLimit = limitManager.getTeamLimit(team);
+      plugin
+          .getTranslator()
+          .sendMessage(
+              player,
+              Translation.PROTECTION_LIMIT_TEAM_REACHED,
+              String.valueOf(teamCount),
+              String.valueOf(teamLimit));
       block.breakNaturally();
       event.setCancelled(true);
       return;
@@ -184,15 +172,57 @@ public class SignChangeListener extends EventListener {
       event.setCancelled(true);
       return;
     }
+    Scoreboard board = Bukkit.getScoreboardManager().getMainScoreboard();
+    Team team = board.getPlayerTeam(player);
 
     // Make sure the owner name is on the second line
     event.setLine(1, event.getPlayer().getName());
+    if (team != null) {
+      event.setLine(3, "[" + (team.getName() + "]"));
+    }
 
     // We need to fetch UUIDs soon
     updateBlockForUniqueIdsSoon(block);
 
     // Send confirmation
     plugin.getTranslator().sendMessage(player, Translation.PROTECTION_CLAIMED_MANUALLY);
+    if (team == null) return;
+    teamLimitCount(player, team.getName());
+  }
+
+  private void teamLimitCount(Player player, String teamName) {
+    Scoreboard board = Bukkit.getScoreboardManager().getMainScoreboard();
+    Team team = board.getTeam(teamName);
+
+    if (team == null) {
+      player.sendMessage(ChatColor.RED + "팀 '" + teamName + "'을(를) 찾을 수 없습니다.");
+      return;
+    }
+
+    ProtectionLimitManager limitManager = plugin.getProtectionLimitManager();
+    if (limitManager == null) {
+      player.sendMessage(ChatColor.RED + "보호 제한이 비활성화되어 있습니다.");
+      return;
+    }
+
+    // Increment count since this is post-creation
+    limitManager.changeTeamCount(team.getName(), 1);
+
+    int limit = limitManager.getTeamLimit(team);
+    int count = limitManager.getTeamProtectionCount(team);
+    String limitStr = limit < 0 ? "무제한" : String.valueOf(limit);
+
+    player.sendMessage(
+        ChatColor.YELLOW
+            + "팀 "
+            + teamName
+            + "의 보호 블록: "
+            + ChatColor.WHITE
+            + count
+            + ChatColor.GRAY
+            + "/"
+            + ChatColor.WHITE
+            + limitStr);
   }
 
   @EventHandler(ignoreCancelled = true)

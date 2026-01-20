@@ -1,8 +1,10 @@
 package nl.rutgerkok.blocklocker.impl.event;
 
+import ch.njol.skript.variables.Variables;
 import com.google.common.collect.ImmutableSet;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import nl.rutgerkok.blocklocker.*;
 import nl.rutgerkok.blocklocker.Translator.Translation;
 import nl.rutgerkok.blocklocker.event.PlayerProtectionCreateEvent;
@@ -46,8 +48,6 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.scoreboard.Scoreboard;
 import org.bukkit.scoreboard.Team;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 public final class InteractListener extends EventListener {
 
@@ -534,31 +534,17 @@ public final class InteractListener extends EventListener {
     // Check protection limits
     ProtectionLimitManager limitManager = plugin.getProtectionLimitManager();
     if (limitManager != null && !limitManager.canCreateProtection(player)) {
-      if (limitManager.isBlockedByTeamLimit(player)) {
-        int teamCount =
-            limitManager.getTeamProtectionCount(
-                org.bukkit.Bukkit.getScoreboardManager().getMainScoreboard().getPlayerTeam(player));
-        int teamLimit =
-            limitManager.getTeamLimit(
-                org.bukkit.Bukkit.getScoreboardManager().getMainScoreboard().getPlayerTeam(player));
-        plugin
-            .getTranslator()
-            .sendMessage(
-                player,
-                Translation.PROTECTION_LIMIT_TEAM_REACHED,
-                String.valueOf(teamCount),
-                String.valueOf(teamLimit));
-      } else {
-        int playerCount = limitManager.getPlayerProtectionCount(player);
-        int playerLimit = limitManager.getPlayerLimit(player);
-        plugin
-            .getTranslator()
-            .sendMessage(
-                player,
-                Translation.PROTECTION_LIMIT_REACHED,
-                String.valueOf(playerCount),
-                String.valueOf(playerLimit));
-      }
+      Team team =
+          org.bukkit.Bukkit.getScoreboardManager().getMainScoreboard().getPlayerTeam(player);
+      int teamCount = limitManager.getTeamProtectionCount(team);
+      int teamLimit = limitManager.getTeamLimit(team);
+      plugin
+          .getTranslator()
+          .sendMessage(
+              player,
+              Translation.PROTECTION_LIMIT_TEAM_REACHED,
+              String.valueOf(teamCount),
+              String.valueOf(teamLimit));
       return false;
     }
 
@@ -614,12 +600,26 @@ public final class InteractListener extends EventListener {
     for (int i = 0; i < newLines.length; i++) {
       frontSide.setLine(i, newLines[i]);
     }
-    @NotNull Scoreboard board = Bukkit.getScoreboardManager().getMainScoreboard();
-    @Nullable Team team = board.getPlayerTeam(player);
+
+    Scoreboard board = Bukkit.getScoreboardManager().getMainScoreboard();
+    Team team = board.getPlayerTeam(player);
 
     if (team != null) {
-      frontSide.setLine(1, "");
-      frontSide.setLine(3, "[" + (team.getName() + "]"));
+      String key = "nation_owner_uuid::" + team.getName();
+      Object obj = Variables.getVariable(key, null, false); // global [web:42]
+      if (obj != null) {
+        UUID owner = UUID.fromString(String.valueOf(obj));
+        OfflinePlayer off = Bukkit.getOfflinePlayer(owner);
+        String ownerName = off.getName();
+        if (ownerName != null) {
+          frontSide.setLine(1, ownerName);
+          frontSide.setLine(3, "[" + (team.getName() + "]"));
+        } else {
+          frontSide.setLine(3, "[" + (team.getName() + "]"));
+        }
+      } else {
+        frontSide.setLine(3, "[" + (team.getName() + "]"));
+      }
     }
 
     sign.update();

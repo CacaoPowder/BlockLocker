@@ -3,11 +3,10 @@ package nl.rutgerkok.blocklocker.impl;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
-import nl.rutgerkok.blocklocker.ProtectionFinder;
 import nl.rutgerkok.blocklocker.profile.PlayerProfile;
 import nl.rutgerkok.blocklocker.protection.Protection;
 import org.bukkit.Bukkit;
+// Used? Yes
 import org.bukkit.OfflinePlayer;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -23,8 +22,6 @@ public final class ProtectionLimitManager {
   private final BlockLockerPluginImpl plugin;
   private final Config config;
   private boolean enabled;
-  private int defaultPlayerLimit;
-  private Map<String, Integer> playerLimits;
   private boolean teamLimitsEnabled;
   private int defaultTeamLimit;
   private Map<String, Integer> teamLimits;
@@ -35,11 +32,8 @@ public final class ProtectionLimitManager {
     loadConfig();
   }
 
-  /** Loads the protection limit configuration from the config. */
   private void loadConfig() {
     this.enabled = config.isProtectionLimitsEnabled();
-    this.defaultPlayerLimit = config.getDefaultPlayerLimit();
-    this.playerLimits = config.getPlayerLimits();
     this.teamLimitsEnabled = config.isTeamLimitsEnabled();
     this.defaultTeamLimit = config.getDefaultTeamLimit();
     this.teamLimits = config.getTeamLimits();
@@ -85,84 +79,7 @@ public final class ProtectionLimitManager {
       }
     }
 
-    // Check player limits
-    int playerLimit = getPlayerLimit(player);
-    if (playerLimit < 0) {
-      return true; // Unlimited
-    }
-
-    int playerCount = getPlayerProtectionCount(player);
-    return playerCount < playerLimit;
-  }
-
-  /**
-   * Gets the protection limit for the specified player. This checks for per-player overrides,
-   * permission-based limits, and falls back to the default limit.
-   *
-   * @param player The player to check.
-   * @return The limit for the player, or -1 for unlimited.
-   */
-  public int getPlayerLimit(Player player) {
-    // Check permission-based limits (e.g., blocklocker.limit.10,
-    // blocklocker.limit.50)
-    // Higher number wins
-    int permissionLimit = -1;
-    for (int testLimit = 1; testLimit <= 10000; testLimit++) {
-      if (player.hasPermission("blocklocker.limit." + testLimit)) {
-        if (testLimit > permissionLimit) {
-          permissionLimit = testLimit;
-        }
-      }
-    }
-    if (permissionLimit > 0) {
-      return permissionLimit;
-    }
-
-    // Check per-player override in config
-    Integer override = playerLimits.get(player.getName());
-    if (override != null) {
-      return override;
-    }
-
-    // Fall back to default
-    return defaultPlayerLimit;
-  }
-
-  /**
-   * Gets the current number of protections owned by the player across all worlds.
-   *
-   * @param player The player to count protections for.
-   * @return The number of protections owned by the player.
-   */
-  public int getPlayerProtectionCount(Player player) {
-    PlayerProfile playerProfile = plugin.getProfileFactory().fromPlayer(player);
-    ProtectionFinder finder = plugin.getProtectionFinder();
-    AtomicInteger count = new AtomicInteger();
-
-    // Count protections across all worlds
-    for (World world : Bukkit.getWorlds()) {
-      // We need to scan all loaded chunks in the world
-      // This is potentially expensive, but necessary for accurate counting
-      for (var chunk : world.getLoadedChunks()) {
-        for (var blockState : chunk.getTileEntities()) {
-          Block block = blockState.getBlock();
-          finder
-              .findProtection(block)
-              .ifPresent(
-                  protection -> {
-                    if (protection.isOwner(playerProfile)) {
-                      // Only count this protection once (not for each block in it)
-                      // We'll use a simple heuristic: only count if this is the "main" block
-                      if (isMainProtectionBlock(protection, block)) {
-                        count.getAndIncrement();
-                      }
-                    }
-                  });
-        }
-      }
-    }
-
-    return count.get();
+    return true;
   }
 
   /**
@@ -241,83 +158,91 @@ public final class ProtectionLimitManager {
   }
 
   /**
-   * Gets the current number of protections owned by any member of the team across all worlds.
+   * Gets the current number of protections owned by the team from persistent storage.
    *
    * @param team The team to count protections for.
-   * @return The number of protections owned by team members.
+   * @return The number of protections owned by the team.
    */
   public int getTeamProtectionCount(Team team) {
-    ProtectionFinder finder = plugin.getProtectionFinder();
-    AtomicInteger count = new AtomicInteger();
+    if (team == null) return 0;
 
-    // Count protections across all worlds
-    for (World world : Bukkit.getWorlds()) {
-      for (var chunk : world.getLoadedChunks()) {
-        for (var blockState : chunk.getTileEntities()) {
-          Block block = blockState.getBlock();
-          finder
-              .findProtection(block)
-              .ifPresent(
-                  protection -> {
-                    protection
-                        .getOwner()
-                        .ifPresent(
-                            owner -> {
-                              if (owner instanceof PlayerProfile playerProfile) {
-                                String ownerName = playerProfile.getDisplayName();
-                                Optional<UUID> uuid = playerProfile.getUniqueId();
-                                if (uuid.isPresent()) {
-                                  OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(uuid.get());
-                                  if (offlinePlayer.getName() != null) {
-                                    ownerName = offlinePlayer.getName();
-                                  }
-                                }
+    // Use the main world's persistent data container
+    // This assumes specific world management, but usually world[0] is
+    // overworld/main
+    World world = Bukkit.getWorlds().get(0);
+    var pdc = world.getPersistentDataContainer();
+    org.bukkit.NamespacedKey key =
+        new org.bukkit.NamespacedKey(plugin, "count_team_" + team.getName());
 
-                                boolean isMember = team.hasEntry(ownerName);
+    return pdc.getOrDefault(key, org.bukkit.persistence.PersistentDataType.INTEGER, 0);
+  }
 
-                                if (ownerName.isEmpty()) {
-                                  // Fallback: Check if any of the profiles on the
-                                  // signs are the team group
-                                  boolean hasTeamGroup = false;
-                                  for (nl.rutgerkok.blocklocker.ProtectionSign sign :
-                                      protection.getSigns()) {
-                                    for (nl.rutgerkok.blocklocker.profile.Profile profile :
-                                        sign.getProfiles()) {
-                                      if (profile
-                                          instanceof
-                                          nl.rutgerkok.blocklocker.profile.GroupProfile) {
-                                        // GroupProfile.getDisplayName() returns
-                                        // [Name], so we must account for
-                                        // brackets
-                                        String displayName = profile.getDisplayName();
-                                        if (displayName.equalsIgnoreCase(team.getName())
-                                            || displayName.equalsIgnoreCase(
-                                                "[" + team.getName() + "]")) {
-                                          hasTeamGroup = true;
-                                          break;
-                                        }
-                                      }
-                                    }
-                                    if (hasTeamGroup) break;
-                                  }
+  /**
+   * Modifies the protection count for a team.
+   *
+   * @param teamName The name of the team.
+   * @param delta The amount to change by (+1 for creation, -1 for destruction).
+   */
+  public void changeTeamCount(String teamName, int delta) {
+    if (teamName == null || teamName.isEmpty()) return;
 
-                                  if (hasTeamGroup) {
-                                    if (isMainProtectionBlock(protection, block)) {
-                                      count.getAndIncrement();
-                                    }
-                                  }
-                                } else if (isMember) {
-                                  if (isMainProtectionBlock(protection, block)) {
-                                    count.getAndIncrement();
-                                  }
-                                }
-                              }
-                            });
-                  });
+    World world = Bukkit.getWorlds().get(0);
+    var pdc = world.getPersistentDataContainer();
+    org.bukkit.NamespacedKey key = new org.bukkit.NamespacedKey(plugin, "count_team_" + teamName);
+
+    int current = pdc.getOrDefault(key, org.bukkit.persistence.PersistentDataType.INTEGER, 0);
+    int newCount = Math.max(0, current + delta);
+
+    if (newCount == 0) {
+      pdc.remove(key);
+    } else {
+      pdc.set(key, org.bukkit.persistence.PersistentDataType.INTEGER, newCount);
+    }
+  }
+
+  /**
+   * Tries to determine the team that owns a protection.
+   *
+   * @param protection The protection to check.
+   * @return The name of the owning team, or null if not found.
+   */
+  public String getTeamFromProtection(Protection protection) {
+    // 1. Try to find via owner profile (Online Player)
+    java.util.Optional<nl.rutgerkok.blocklocker.profile.Profile> ownerOpt = protection.getOwner();
+    if (ownerOpt.isPresent()) {
+      nl.rutgerkok.blocklocker.profile.Profile owner = ownerOpt.get();
+      if (owner instanceof PlayerProfile playerProfile) {
+        Player p = playerProfile.getUniqueId().map(Bukkit::getPlayer).orElse(null);
+        if (p != null) {
+          Team team = Bukkit.getScoreboardManager().getMainScoreboard().getPlayerTeam(p);
+          if (team != null) return team.getName();
+        } else {
+          // Offline Lookup
+          Optional<UUID> uuidOpt = playerProfile.getUniqueId();
+          if (uuidOpt.isPresent()) {
+            OfflinePlayer op = Bukkit.getOfflinePlayer(uuidOpt.get());
+            Team team = Bukkit.getScoreboardManager().getMainScoreboard().getPlayerTeam(op);
+            if (team != null) return team.getName();
+          }
         }
       }
     }
 
-    return count.get();
+    // 2. Check signs for [TeamName] tags
+    for (nl.rutgerkok.blocklocker.ProtectionSign sign : protection.getSigns()) {
+      for (nl.rutgerkok.blocklocker.profile.Profile p : sign.getProfiles()) {
+        if (p instanceof nl.rutgerkok.blocklocker.profile.GroupProfile) {
+          String dn = p.getDisplayName();
+          if (dn.startsWith("[") && dn.endsWith("]")) {
+            String tagName = dn.substring(1, dn.length() - 1);
+            Team t = Bukkit.getScoreboardManager().getMainScoreboard().getTeam(tagName);
+            if (t != null) {
+              return t.getName();
+            }
+          }
+        }
+      }
+    }
+    return null;
   }
 }

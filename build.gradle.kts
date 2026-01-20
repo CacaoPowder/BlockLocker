@@ -14,10 +14,9 @@ repositories {
     maven("https://rutgerkok.nl/repo")
     maven("https://repo.codemc.org/repository/maven-public/")
     maven("https://maven.enginehub.org/repo/")
-    maven("https://repo.commandapi.jorel.dev/")
-    maven("https://repo.commandapi.org/")
+    maven("https://repo.papermc.io/repository/maven-public/")
+    maven("https://repo.skriptlang.org/releases")
 }
-
 dependencies {
     // Paper API
     compileOnly("io.papermc.paper:paper-api:1.21.10-R0.1-SNAPSHOT")
@@ -31,6 +30,7 @@ dependencies {
     compileOnly("me.glaremasters:guilds:3.5.3.5-RELEASE")
     compileOnly("net.sacredlabyrinth.phaed.simpleclans:SimpleClans:2.15.1")
     compileOnly("commons-lang:commons-lang:2.6")
+    compileOnly("com.github.SkriptLang:Skript:2.13.2")
 
     // Testing
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.3.1")

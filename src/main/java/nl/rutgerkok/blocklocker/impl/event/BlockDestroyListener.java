@@ -8,12 +8,17 @@ import nl.rutgerkok.blocklocker.Permissions;
 import nl.rutgerkok.blocklocker.ProtectionSign;
 import nl.rutgerkok.blocklocker.Translator.Translation;
 import nl.rutgerkok.blocklocker.impl.BlockLockerPluginImpl;
+import nl.rutgerkok.blocklocker.impl.ProtectionLimitManager;
 import nl.rutgerkok.blocklocker.profile.Profile;
 import nl.rutgerkok.blocklocker.protection.Protection;
+import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.Tag;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
+import org.bukkit.block.data.Directional;
 import org.bukkit.entity.Creeper;
 import org.bukkit.entity.Enderman;
 import org.bukkit.entity.Entity;
@@ -32,6 +37,8 @@ import org.bukkit.event.entity.EntityBreakDoorEvent;
 import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.world.StructureGrowEvent;
+import org.bukkit.scoreboard.Scoreboard;
+import org.bukkit.scoreboard.Team;
 
 public class BlockDestroyListener extends EventListener {
 
@@ -53,6 +60,33 @@ public class BlockDestroyListener extends EventListener {
       return Optional.empty();
     }
     return protectionSign;
+  }
+
+  private Optional<ProtectionSign> findMainSignSupportedBy(Protection protection, Block block) {
+    for (ProtectionSign sign : protection.getSigns()) {
+      if (!sign.getType().isMainSign()) {
+        continue;
+      }
+      Block signBlock = sign.getLocation().getBlock();
+      if (isSupportedBy(signBlock, block)) {
+        return Optional.of(sign);
+      }
+    }
+    return Optional.empty();
+  }
+
+  private boolean isSupportedBy(Block signBlock, Block potentialSupport) {
+    if (Tag.WALL_SIGNS.isTagged(signBlock.getType())) {
+      if (signBlock.getBlockData() instanceof Directional) {
+        Directional directional = (Directional) signBlock.getBlockData();
+        return signBlock
+            .getRelative(directional.getFacing().getOppositeFace())
+            .equals(potentialSupport);
+      }
+    } else if (Tag.STANDING_SIGNS.isTagged(signBlock.getType())) {
+      return signBlock.getRelative(BlockFace.DOWN).equals(potentialSupport);
+    }
+    return false;
   }
 
   private void destroyOtherSigns(ProtectionSign protectionSign, Protection protection) {
@@ -86,9 +120,56 @@ public class BlockDestroyListener extends EventListener {
     }
 
     Optional<ProtectionSign> mainSign = asMainSign(block);
+    if (!mainSign.isPresent()) {
+      // Maybe we are breaking the block supporting the main sign?
+      mainSign = findMainSignSupportedBy(protection.get(), block);
+    }
+
     if (mainSign.isPresent()) {
+      // Decrement team count
+      nl.rutgerkok.blocklocker.impl.ProtectionLimitManager limitManager =
+          plugin.getProtectionLimitManager();
+      if (limitManager != null) {
+        String teamName = limitManager.getTeamFromProtection(protection.get());
+        if (teamName != null) {
+          limitManager.changeTeamCount(teamName, -1);
+          teamLimitCount(player, teamName);
+        }
+      }
       destroyOtherSigns(mainSign.get(), protection.get());
     }
+  }
+
+  private void teamLimitCount(Player player, String teamName) {
+    Scoreboard board = Bukkit.getScoreboardManager().getMainScoreboard();
+    Team team = board.getTeam(teamName);
+
+    if (team == null) {
+      player.sendMessage(ChatColor.RED + "팀 '" + teamName + "'을(를) 찾을 수 없습니다.");
+      return;
+    }
+
+    ProtectionLimitManager limitManager = plugin.getProtectionLimitManager();
+    if (limitManager == null) {
+      player.sendMessage(ChatColor.RED + "보호 제한이 비활성화되어 있습니다.");
+      return;
+    }
+
+    int limit = limitManager.getTeamLimit(team);
+    int count = limitManager.getTeamProtectionCount(team);
+    String limitStr = limit < 0 ? "무제한" : String.valueOf(limit);
+
+    player.sendMessage(
+        ChatColor.YELLOW
+            + "팀 "
+            + teamName
+            + "의 보호 블록: "
+            + ChatColor.WHITE
+            + count
+            + ChatColor.GRAY
+            + "/"
+            + ChatColor.WHITE
+            + limitStr);
   }
 
   @EventHandler(ignoreCancelled = true)
@@ -103,7 +184,8 @@ public class BlockDestroyListener extends EventListener {
 
   @EventHandler(ignoreCancelled = true)
   public void onBlockExplodeEvent(BlockExplodeEvent event) {
-    // Generally caused by a Bed, but when the event is triggered the bed is no longer there so we
+    // Generally caused by a Bed, but when the event is triggered the bed is no
+    // longer there so we
     // can't check that
     AttackType attackType = AttackType.BLOCK_EXPLOSION;
     if (plugin.getChestSettings().allowDestroyBy(attackType)) {

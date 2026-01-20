@@ -33,8 +33,6 @@ final class Config {
         AUTO_EXPIRE_DAYS = "autoExpireDays",
         ALLOW_DESTROY_BY = "allowDestroyBy",
         PROTECTION_LIMITS_ENABLED = "protectionLimits.enabled",
-        DEFAULT_PLAYER_LIMIT = "protectionLimits.defaultPlayerLimit",
-        PLAYER_LIMITS = "protectionLimits.playerLimits",
         TEAM_LIMITS_ENABLED = "protectionLimits.teamLimitsEnabled",
         DEFAULT_TEAM_LIMIT = "protectionLimits.defaultTeamLimit",
         TEAM_LIMITS = "protectionLimits.teamLimits",
@@ -58,8 +56,6 @@ final class Config {
 
   // Protection limit settings
   private final boolean protectionLimitsEnabled;
-  private final int defaultPlayerLimit;
-  private final Map<String, Integer> playerLimits;
   private final boolean teamLimitsEnabled;
   private final int defaultTeamLimit;
   private final Map<String, Integer> teamLimits;
@@ -76,9 +72,8 @@ final class Config {
     allowDestroyBy = readAttackTypeSet(config.getStringList(Key.ALLOW_DESTROY_BY));
 
     // Protection limits
+    // Protection limits
     protectionLimitsEnabled = config.getBoolean(Key.PROTECTION_LIMITS_ENABLED, true);
-    defaultPlayerLimit = config.getInt(Key.DEFAULT_PLAYER_LIMIT, 10);
-    playerLimits = readIntegerMap(config.getConfigurationSection(Key.PLAYER_LIMITS));
     teamLimitsEnabled = config.getBoolean(Key.TEAM_LIMITS_ENABLED, false);
     defaultTeamLimit = config.getInt(Key.DEFAULT_TEAM_LIMIT, 50);
     teamLimits = readIntegerMap(config.getConfigurationSection(Key.TEAM_LIMITS));
@@ -319,24 +314,6 @@ final class Config {
    */
   boolean isProtectionLimitsEnabled() {
     return protectionLimitsEnabled;
-  }
-
-  /**
-   * Gets the default player protection limit.
-   *
-   * @return The default limit, or -1 for unlimited.
-   */
-  int getDefaultPlayerLimit() {
-    return defaultPlayerLimit;
-  }
-
-  /**
-   * Gets the per-player limit overrides.
-   *
-   * @return Map of player names to limits.
-   */
-  Map<String, Integer> getPlayerLimits() {
-    return new HashMap<>(playerLimits);
   }
 
   /**

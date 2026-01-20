@@ -195,16 +195,7 @@ protectionLimits:
   # Enable protection limits
   enabled: true
   
-  # Default limit for all players (-1 for unlimited)
-  # Players with blocklocker.limit.bypass permission can bypass this limit
-  defaultPlayerLimit: 10
-  
-  # Per-player limits (overrides default)
-  # Format: 'PlayerName: limit'
-  playerLimits:
-    # ExamplePlayer: 50
-    # AdminPlayer: -1
-  
+
   # Enable team-based limits
   # When enabled, all members of a team share a protection limit
   teamLimitsEnabled: false
